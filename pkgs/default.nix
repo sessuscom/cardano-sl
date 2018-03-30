@@ -7487,11 +7487,11 @@ inherit (pkgs) mesa;};
          , fgl, filepath, foldl, formatting, Glob, graphviz, kademlia, lens
          , lifted-async, log-warper, MonadRandom, mtl, neat-interpolation
          , network-transport-tcp, optparse-applicative, optparse-generic
-         , parsec, pipes, pipes-bytestring, pipes-interleave, pipes-safe
-         , process, QuickCheck, random, random-shuffle, safe-exceptions
-         , serokell-util, silently, stdenv, stm, string-conv, tabl, tar
-         , text, time, time-units, universum, unix, unix-compat
-         , unordered-containers, vector, yaml
+         , parsec, parsers, pipes, pipes-bytestring, pipes-interleave
+         , pipes-safe, process, QuickCheck, random, random-shuffle
+         , safe-exceptions, serokell-util, silently, stdenv, stm
+         , string-conv, tabl, tar, text, time, time-units, trifecta
+         , universum, unix, unix-compat, unordered-containers, vector, yaml
          }:
          mkDerivation {
            pname = "cardano-sl-tools";
@@ -7510,11 +7510,11 @@ inherit (pkgs) mesa;};
              data-default directory ed25519 fgl filepath foldl formatting Glob
              graphviz kademlia lens lifted-async log-warper MonadRandom mtl
              neat-interpolation network-transport-tcp optparse-applicative
-             optparse-generic parsec pipes pipes-bytestring pipes-interleave
-             pipes-safe process QuickCheck random random-shuffle safe-exceptions
-             serokell-util silently stm string-conv tabl tar text time
-             time-units universum unix unix-compat unordered-containers vector
-             yaml
+             optparse-generic parsec parsers pipes pipes-bytestring
+             pipes-interleave pipes-safe process QuickCheck random
+             random-shuffle safe-exceptions serokell-util silently stm
+             string-conv tabl tar text time time-units trifecta universum unix
+             unix-compat unordered-containers vector yaml
            ];
            executableToolDepends = [ cpphs ];
            doHaddock = false;
