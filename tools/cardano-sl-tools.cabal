@@ -316,12 +316,14 @@ executable cardano-launcher
                      , log-warper
                      , neat-interpolation
                      , optparse-applicative
+                     , parsers
                      , process
                      , safe-exceptions
                      , serokell-util
                      , silently
                      , text
                      , time-units
+                     , trifecta
                      , universum
                      , unordered-containers
                      , yaml
