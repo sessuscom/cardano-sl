@@ -291,6 +291,9 @@ executable cardano-keygen
   else
     buildable: True
 
+library
+  hs-source-dirs:      src
+
 executable cardano-launcher
   hs-source-dirs:      src/launcher
   main-is:             Main.hs
