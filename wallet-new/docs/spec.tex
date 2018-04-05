@@ -13,6 +13,8 @@
 \usepackage{forest}
 \usepackage{IEEEtrantools}
 
+\usetikzlibrary{arrows}
+
 \newcommand{\powerset}[1]{\mathbb{P}(#1)}
 \newcommand{\order}[1]{\mathcal{O}\left(#1\right)}
 \newcommand{\restrictdom}{\lhd}
@@ -2105,24 +2107,161 @@ well as the actual UTxO.
 \caption{\label{fig:full_wallet_model}Full wallet model}
 \end{figure}
 
-\section{TODO: History tracking}
+\section{History tracking}
 
-Goals:
+History tracking refers to the wallet keeping some additional information about
+transactions and blocks. From the point of the abstract wallet specification
+we are primarily interested in modelling how this relates to rollback. The
+basic model is shown in Figure~\ref{fig:history_tracking}. We have two parameters:
 
 \begin{itemize}
-\item For each transaction ever submitted to the wallet, or coming from the
-blockchain and transferring funds to the wallet, be able to report its current
-state: pending, confirmed (and how deep into the chain it was confirmed),
-abandoned.
-\item Support efficient storage.
-\item Support fast lookup (and pagination).
+\item Transaction metadata $\mathsf{TxMeta}$ is assumed to be stateless;
+once we have seen a transaction we can compute its metadata and this will never
+change. Consequently, rollbacks don't change the transaction metadata that the
+wallet records.
+\item Block metadata $\mathsf{BlockMeta}$ is assumed derivable from a block;
+on rollback we simply revert to the previous value of the block metadata.
 \end{itemize}
 
-Non-goal: be able to see when things rolled back; but can of course use
-implement the above as a view on some sort of append-only log
-(as long as efficiency is guaranteed).
+\begin{figure}
+%
+\emph{Parameters}
+%
+\begin{IEEEeqnarray*}{LLLR}
+\mathsf{TxMeta}              &&& \text{meta information about transactions} \\
+(\mathsf{BlockMeta}, \uplus) &&& \text{meta information about blocks (monoid)} \\
+\mathsf{txMeta}    & :: \mathsf{Tx}             & \rightarrow \mathsf{TxMeta} \\
+\mathsf{blockMeta} & :: \mathbb{P}(\mathsf{Tx}) & \rightarrow \mathsf{BlockMeta}
+\end{IEEEeqnarray*}
+%
+\emph{Wallet state}
+%
+\begin{align*}
+& \mathsf{TxInfo} = \mathsf{TxId} \mapsto \mathsf{TxMeta}    \\
+& \mathsf{Wallet} = [\mathsf{Utxo} \times \mathsf{Pending} \times \mathsf{BlockMeta}] \times \mathsf{TxInfo}
+\end{align*}
+%
+\emph{Updates}
+%
+\begin{align*}
+& \mathsf{applyBlock} ~ b ~ ((\mathit{utxo}, \mathit{pending}, \mathit{blockMeta}) : \mathit{checkpoints}, \mathit{txInfo}) = ( \\
+& \qquad \phantom{:{}} ~
+         ( \mathsf{updateUTxO} ~ b ~ \mathit{utxo}
+         , \mathsf{updatePending} ~ b ~ \mathit{pending}
+         , \mathit{blockMeta} \uplus \mathsf{blockMeta} ~ b
+         ) \\
+& \qquad : (\mathit{utxo}, \mathit{pending}, \mathit{blockMeta}) : \mathit{checkpoints}
+         , ~ \mathit{txInfo} \cup \{ \mathsf{txid} ~ \mathit{tx} \mapsto \mathsf{txMeta} ~ \mathit{tx} \mid \mathit{tx} \in b \}
+         ) \\
+& \mathsf{newPending} ~ tx ~ ((\mathit{utxo}, \mathit{pending}, \mathit{blockMeta}) : \mathit{checkpoints}, \mathit{txInfo}) = \\
+& \qquad (\mathit{utxo}, pending \cup \{ tx \} ) : \mathit{checkpoints}, \mathit{txInfo} \cup \{ \mathsf{txid} ~ \mathit{tx} \mapsto \mathsf{txMeta} ~ \mathit{tx} \}) \\
+& \mathsf{rollback} ~ ((\mathit{utxo}, \mathit{pending}, \mathit{blockMeta}) :  (\mathit{utxo}^\prime, \mathit{pending}^\prime, \mathit{blockMeta}') : \mathit{checkpoints})) = \\
+& \qquad (\mathit{utxo}^\prime, \mathit{pending} \cup \mathit{pending}^\prime, \mathit{blockMeta}') : \mathit{checkpoints}
+\end{align*}
+%
+\caption{\label{fig:history_tracking}History tracking}
+\end{figure}
 
-\section{TODO: Transaction resubmission}
+\subsection{Relation to the current V1 Wallet API}
+
+The model proposed in this section is sufficiently expressive to encode what
+the current V1 wallet REST API requires.
+
+\begin{itemize}
+\item Most information returned is entirely static, and can be covered by
+a suitable choice for $\mathsf{TxMeta}$. This includes the transaction ID,
+the total amount, the inputs and outputs (both in terms of addresses),
+whether the transaction is ``local'' or not (meaning it is from and to
+addresses owned by the wallet), the transaction direction (incoming or
+outgoing), and the transaction creation time.
+\item The depth of the transaction in the blockchain can be recorded
+(somewhat implicitly) by choosing
+\begin{equation*}
+\mathsf{BlockMeta} = \mathsf{TxId} \mapsto \mathsf{BlockNumber}
+\end{equation*}
+The depth can then be computed provided the wallet knows the length of the
+current chain.
+\item The transaction's status can be reported as follows:
+%
+\begin{equation*}
+\begin{cases}
+\texttt{Applying}       & \mathit{tx} \in \mathit{pending} \\
+\begin{cases}
+\texttt{InNewestBlocks} & d \le k \\
+\texttt{Persisted}      & d > k
+\end{cases} & \mathsf{txid} ~ \mathit{tx} \mapsto n \in \mathit{blockMeta} \text{ ($d$ derived block depth)} \\
+\begin{cases}
+\texttt{WontApply} & \textit{outgoing} \\
+\textit{not shown} & \textit{incoming}
+\end{cases} & \textit{otherwise}
+\end{cases}
+\end{equation*}
+The \texttt{Creating} status can be seen as a phase before the transaction
+enters the wallet, and is mostly inpdendent from it.
+\end{itemize}
+
+The diagram in Figure~\ref{fig:transaction_state} shows how the status of
+transactions can change over dynamically; the left diagram shows outgoing
+transactions, the right shows incoming transactions. The empty circle means that
+the transaction is not included in the wallet's reported history.
+
+\begin{figure}
+\begin{tikzpicture}[->,>=stealth',shorten >=1pt,auto,node distance=2cm,
+  thick,main node/.style={rectangle,fill=blue!20,draw,minimum size=1mm}]
+
+  \node[main node,style={circle}] (LStart) {};
+  \node[main node] (LApplying)      [below=1cm of LStart] {\texttt{Applying}};
+  \node[main node] (LInNewestBlock) [below left=1cm and 0.5cm of LApplying] {\texttt{InNewestBlock}};
+  \node[main node] (LWontApply)     [below right=1cm and 0.5cm of LApplying] {\texttt{WontApply}};
+  \node[main node] (LPersisted)     [below =1cm of LInNewestBlock] {\texttt{Persisted}};
+
+  \path[every node/.style={font=\sffamily\scriptsize,
+      fill=white,inner sep=1pt}]
+    % Right-hand-side arrows rendered from top to bottom to
+    % achieve proper rendering of labels over arrows.
+    (LStart)
+      edge node {\texttt{newPending}} (LApplying)
+    (LApplying)
+      edge [bend right=30] node[left=1mm] {\texttt{applyBlock}} (LInNewestBlock)
+      edge [bend left=30]  node[right=1mm] {\texttt{applyBlock}$^*$} (LWontApply)
+    (LInNewestBlock)
+      edge [loop left]     node {\texttt{applyBlock}} (LInNewestBlock)
+      edge [bend right=30] node[left=1mm] {\texttt{rollback}} (LApplying)
+      edge node {\texttt{applyBlock}} (LPersisted)
+    (LWontApply)
+      edge [bend left=30] node[right=1mm] {\texttt{rollback}$^*$} (LApplying)
+    ;
+
+  \node[main node,style={circle}] (RStart) [right=5.5cm of LStart] {};
+  \node[main node] (RInNewestBlock) [below=1cm of RStart] {\texttt{InNewestBlock}};
+  \node[main node] (RPersisted)     [below=1cm of RInNewestBlock] {\texttt{Persisted}};
+
+  \path[every node/.style={font=\sffamily\scriptsize,
+      fill=white,inner sep=1pt}]
+    % Right-hand-side arrows rendered from top to bottom to
+    % achieve proper rendering of labels over arrows.
+    (RStart)
+      edge [bend right=30] node[left=1mm] {\texttt{applyBlock}} (RInNewestBlock)
+    (RInNewestBlock)
+      edge [loop right]     node {\texttt{applyBlock}} (RInNewestBlock)
+      edge [bend right=30] node[right=1mm] {\texttt{rollback}} (RStart)
+      edge node {\texttt{applyBlock}} (RPersisted)
+    ;
+\end{tikzpicture}
+\caption{\label{fig:transaction_state}Transaction state transitions}
+\end{figure}
+
+\subsection{Prefiltering}
+
+\todo[inline]{TODO}
+
+\subsection{Transaction resubmission}
+
+In an actual wallet implementation, $\mathsf{newPending}$ would of course have to
+broadcast the transaction over the network, so that a next slot leader can
+include the transaction into the blockchain. The wallet may wish to monitor this,
+resubmit the transaction again if it hasn't been included after a while, and
+eventually give up.
 
 Exponential back-off?
 
